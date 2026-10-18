@@ -1,4 +1,4 @@
-"""Grey DEMATEL — Streamlit arayüzü."""
+"""Grey DEMATEL — Streamlit arayüzü (Çoklu Uzman Desteği)."""
 
 from __future__ import annotations
 
@@ -22,10 +22,11 @@ st.caption(
 )
 
 
-def matrices_from_scale_grid(n: int, names: list[str], key_prefix: str) -> tuple[np.ndarray, np.ndarray]:
+def matrices_from_scale_grid(n: int, names: list[str], key_prefix: str, exp_num: int) -> tuple[np.ndarray, np.ndarray]:
+    """Bir uzman için n x n boyutlarında alt ve üst sınır matrislerini alır."""
     lower = np.zeros((n, n))
     upper = np.zeros((n, n))
-    st.markdown("**Direkt ilişki matrisi (A)** — hücrede dil skalasını seçin. Köşegen otomatik [0,0].")
+    st.markdown(f"**Uzman {exp_num} Direkt İlişki Matrisi** — hücrede dil skalasını seçin. Köşegen otomatik [0,0].")
     cols = st.columns(min(n, 6))
     for j in range(n):
         with cols[j % len(cols)]:
@@ -70,7 +71,7 @@ def build_results_excel(result) -> bytes:
                 columns=idx,
             )
 
-        grey_df(result.A_lower, result.A_upper).to_excel(writer, sheet_name="A_Direkt")
+        grey_df(result.A_lower, result.A_upper).to_excel(writer, sheet_name="A_Direkt_Ortalama")
         pd.DataFrame({"S": [result.S]}).to_excel(writer, sheet_name="S_Normalize", index=False)
         grey_df(result.D_lower, result.D_upper).to_excel(writer, sheet_name="D_Normalize")
         grey_df(result.T_lower, result.T_upper).to_excel(writer, sheet_name="T_Toplam")
@@ -136,8 +137,12 @@ def plot_influence_graph(edges, names, ax):
     ax.set_axis_off()
 
 
+# --- SESSION STATE İLE UZMAN SAYISI YÖNETİMİ ---
+if "uzman_sayisi" not in st.session_state:
+    st.session_state.uzman_sayisi = 1
+
 with st.sidebar:
-    st.header("Girdi")
+    st.header("Girdi Ayarları")
     mode = st.radio("Veri girişi", ["Arayüzden matris", "Dosyadan yükle"], index=0)
     n = st.number_input("Kriter sayısı (n)", min_value=2, max_value=12, value=4, step=1)
     default_names = [f"K{i + 1}" for i in range(int(n))]
@@ -146,6 +151,15 @@ with st.sidebar:
     if len(names) != int(n):
         st.warning(f"{int(n)} kriter için tam {int(n)} ad girin. Şimdilik K1…Kn kullanılıyor.")
         names = default_names
+    
+    st.markdown("---")
+    if mode == "Arayüzden matris":
+        if st.button("➕ Yeni Uzman Ekle", type="secondary"):
+            st.session_state.uzman_sayisi += 1
+            st.rerun()
+        if st.button("➖ Son Uzmanı Sil", type="secondary") and st.session_state.uzman_sayisi > 1:
+            st.session_state.uzman_sayisi -= 1
+            st.rerun()
 
 st.subheader("Dil skalası")
 st.table(
@@ -154,11 +168,26 @@ st.table(
     )
 )
 
-A_lower: np.ndarray | None = None
-A_upper: np.ndarray | None = None
+final_A_lower: np.ndarray | None = None
+final_A_upper: np.ndarray | None = None
 
 if mode == "Arayüzden matris":
-    A_lower, A_upper = matrices_from_scale_grid(int(n), names, "ui")
+    all_lower_matrices = []
+    all_upper_matrices = []
+    
+    # Uzman sayısı kadar matris oluştur
+    for exp_i in range(st.session_state.uzman_sayisi):
+        with st.container(border=True):
+            st.subheader(f"Uzman {exp_i + 1}")
+            l_mat, u_mat = matrices_from_scale_grid(int(n), names, f"ui_exp_{exp_i}", exp_i + 1)
+            all_lower_matrices.append(l_mat)
+            all_upper_matrices.append(u_mat)
+    
+    # Çoklu uzman varsa ortalamalarını alarak birleştir (Aggregation)
+    if all_lower_matrices and all_upper_matrices:
+        final_A_lower = np.mean(all_lower_matrices, axis=0)
+        final_A_upper = np.mean(all_upper_matrices, axis=0)
+
 else:
     st.markdown("**Alt limit** ve **üst limit** için `n×n` CSV veya Excel yükleyin (ilk satır/sütun kriter adları).")
     col1, col2 = st.columns(2)
@@ -170,22 +199,26 @@ else:
         from grey_dematel.io_csv import read_matrix_pair
 
         try:
-            A_lower, A_upper, file_names = read_matrix_pair(file_l.getvalue(), file_u.getvalue())
-            if len(file_names) == A_lower.shape[0]:
+            final_A_lower, final_A_upper, file_names = read_matrix_pair(file_l.getvalue(), file_u.getvalue())
+            if len(file_names) == final_A_lower.shape[0]:
                 names = file_names
-            st.success(f"Matris boyutu: {A_lower.shape[0]}×{A_lower.shape[1]}")
+            st.success(f"Matris boyutu: {final_A_lower.shape[0]}×{final_A_lower.shape[1]}")
         except Exception as e:
             st.error(str(e))
 
-run = st.button("Hesapla", type="primary")
+st.markdown("---")
+run = st.button("🚀 Çözümü Hesapla", type="primary")
 
-if run and A_lower is not None and A_upper is not None:
+if run and final_A_lower is not None and final_A_upper is not None:
     try:
-        result = compute_grey_dematel(A_lower, A_upper, names)
+        result = compute_grey_dematel(final_A_lower, final_A_upper, names)
     except Exception as e:
         st.error(str(e))
         st.stop()
 
+    if st.session_state.uzman_sayisi > 1 and mode == "Arayüzden matris":
+        st.info(f"💡 {st.session_state.uzman_sayisi} uzmanın değerlendirmelerinin ortalaması alınarak birleştirilmiş başlangıç matrisi oluşturuldu ve çözüldü.")
+    
     st.success(f"Normalleştirme paydası **S** = {result.S:.6f}")
 
     tab1, tab2, tab3, tab4 = st.tabs(["Özet", "Matrisler", "Grafikler", "İndir"])
@@ -211,6 +244,9 @@ if run and A_lower is not None and A_upper is not None:
         st.dataframe(df, use_container_width=True)
 
     with tab2:
+        st.markdown(f"**A (Direkt İlişki)** — {('Ortalama' if st.session_state.uzman_sayisi > 1 else 'Başlangıç')}")
+        a_mid = (result.A_lower + result.A_upper) / 2
+        st.dataframe(pd.DataFrame(a_mid, index=names, columns=names))
         st.markdown("**D (normalleştirilmiş)** orta nokta")
         d_mid = (result.D_lower + result.D_upper) / 2
         st.dataframe(pd.DataFrame(d_mid, index=names, columns=names))
