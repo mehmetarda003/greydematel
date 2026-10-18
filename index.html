@@ -3,32 +3,115 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Grey DEMATEL</title>
+  <title>Grey DEMATEL Çözücü</title>
   <style>
     :root { font-family: system-ui, sans-serif; line-height: 1.5; color: #1e293b; background: #f8fafc; }
-    body { max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; }
-    h1 { font-size: 1.75rem; }
-    a { color: #2563eb; }
-    .box { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; margin: 1rem 0; }
-    code { background: #f1f5f9; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.9em; }
+    body { max-width: 50rem; margin: 3rem auto; padding: 0 1.25rem; }
+    h1 { font-size: 1.75rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; }
+    .box { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.25rem; margin: 1rem 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .matrix-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    .matrix-table th, .matrix-table td { border: 1px solid #cbd5e1; padding: 8px; text-align: center; font-size: 0.9rem; }
+    .matrix-table th { background-color: #f1f5f9; }
+    select { padding: 4px; border-radius: 4px; border: 1px solid #94a3b8; }
+    .action-btn { background: #2563eb; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-right: 10px; }
+    .action-btn:hover { background: #1d4ed8; }
+    .success-btn { background: #16a34a; }
+    .success-btn:hover { background: #15803d; }
   </style>
 </head>
 <body>
-  <h1>Grey DEMATEL</h1>
-  <p>Gri sayılarla DEMATEL analizi — Python + Streamlit.</p>
-
-  <div class="box">
-    <p><strong>Canlı uygulama</strong> GitHub Pages üzerinde çalışmaz (Streamlit sunucu gerektirir).</p>
-    <p id="app-link">Streamlit Cloud’a deploy ettikten sonra buraya uygulama linkinizi ekleyin.</p>
-    <!-- Örnek: <p><a href="https://SIZIN-APP.streamlit.app">Uygulamayı aç</a></p> -->
+  <h1>Grey DEMATEL Çoklu Uzman Girişi</h1>
+  
+  <!-- Matrislerin Kopyalanacağı Konteyner -->
+  <div id="matrices-container">
+    <div class="box expert-matrix" id="expert-1">
+      <h3 style="margin-top: 0;">Uzman 1</h3>
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>K1</th>
+            <th>K2</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>K1</th>
+            <td><select disabled><option value="[0,0]">[0,0]</option></select></td>
+            <td>
+              <select>
+                <option value="[0,0]">Etkisi Yok [0,0]</option>
+                <option value="[0,0.25]">Çok Düşük Etki</option>
+                <option value="[0.25,0.50]">Düşük Etki</option>
+                <option value="[0.50,0.75]">Yüksek Etki</option>
+                <option value="[0.75,1.0]">Çok Yüksek Etki</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <th>K2</th>
+            <td>
+              <select>
+                <option value="[0,0]">Etkisi Yok [0,0]</option>
+                <option value="[0,0.25]">Çok Düşük Etki</option>
+                <option value="[0.25,0.50]">Düşük Etki</option>
+                <option value="[0.50,0.75]">Yüksek Etki</option>
+                <option value="[0.75,1.0]">Çok Yüksek Etki</option>
+              </select>
+            </td>
+            <td><select disabled><option value="[0,0]">[0,0]</option></select></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  <div class="box">
-    <h2>Bilgisayarınızda çalıştırma</h2>
-    <pre><code>pip install -r requirements.txt
-streamlit run app.py</code></pre>
-  </div>
+  <button type="button" id="add-expert-btn" class="action-btn">+ Yeni Uzman Ekle</button>
+  <button type="button" id="calculate-btn" class="action-btn success-btn">Hesapla / Çöz</button>
 
-  <p><a href="https://github.com/">Repo</a> · <a href="README.md">README</a></p>
+  <script>
+    // Uzman Tablosunu Çoğaltma Mantığı
+    document.getElementById('add-expert-btn').addEventListener('click', function() {
+        const container = document.getElementById('matrices-container');
+        const expertCount = container.getElementsByClassName('expert-matrix').length + 1;
+        
+        const firstMatrix = document.getElementById('expert-1');
+        const clone = firstMatrix.cloneNode(true);
+        
+        clone.id = 'expert-' + expertCount;
+        clone.querySelector('h3').innerText = 'Uzman ' + expertCount;
+        
+        const selects = clone.querySelectorAll('select:not([disabled])');
+        selects.forEach(select => select.selectedIndex = 0);
+        
+        container.appendChild(clone);
+    });
+
+    // Verileri Toplayıp Python Backend'e Gönderme Mantığı
+    document.getElementById('calculate-btn').addEventListener('click', function() {
+        const allExpertMatrices = [];
+        const expertDivs = document.querySelectorAll('.expert-matrix');
+
+        expertDivs.forEach(div => {
+            const matrixData = []; 
+            const rows = div.querySelectorAll('tbody tr'); 
+            
+            rows.forEach(row => {
+                const rowData = [];
+                const selects = row.querySelectorAll('select');
+                selects.forEach(sel => {
+                    const cleanVal = sel.value.replace('[','').replace(']','').split(',');
+                    rowData.push([parseFloat(cleanVal[0]), parseFloat(cleanVal[1])]);
+                });
+                if(rowData.length > 0) matrixData.push(rowData);
+            });
+            allExpertMatrices.push(matrixData);
+        });
+
+        // Burada veriyi Python/Flask/FastAPI tarafına yolluyoruz
+        console.log("Backend'e gidecek JSON veri:", JSON.stringify({ matrices: allExpertMatrices }));
+        alert("Matrisler başarıyla birleştirildi! Tarayıcı konsolunu (F12) kontrol et.");
+    });
+  </script>
 </body>
 </html>
